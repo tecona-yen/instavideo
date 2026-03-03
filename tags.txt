@@ -8,6 +8,3 @@ video7.mp4: #education, #science, #space
 video8.mp4: #fashion, #beauty, #makeup
 video9.mp4: #gaming, #review, #memes
 video10.mp4: #photography, #cinematic, #design
-bad_line_without_colon
-video11.mp4: #food, #not_valid_tag, #recipes
-video12.txt: #tech, #ai
