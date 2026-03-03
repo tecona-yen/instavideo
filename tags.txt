@@ -1,0 +1,13 @@
+video1.mp4: #food, #streetfood, #travel
+video2.mp4: #cars, #luxury, #carshow
+video3.mp4: #tech, #ai, #coding
+video4.mp4: #fitness, #motivation, #healthy
+video5.mp4: #music, #dance, #comedy
+video6.mp4: #nature, #ocean, #wildlife
+video7.mp4: #education, #science, #space
+video8.mp4: #fashion, #beauty, #makeup
+video9.mp4: #gaming, #review, #memes
+video10.mp4: #photography, #cinematic, #design
+bad_line_without_colon
+video11.mp4: #food, #not_valid_tag, #recipes
+video12.txt: #tech, #ai
