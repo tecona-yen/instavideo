@@ -1,6 +1,16 @@
-const PERSONALIZATION_KEY = "instavideo_state_v1";
-const RECENT_VIDEO_BAN = 3;
+const PERSONALIZATION_KEY = "instavideo_state";
+const RECENT_VIDEO_BAN = 5;
 const RECENT_TAG_WINDOW = 10;
+const MAX_TAGS_PER_VIDEO = 10;
+const FAIRNESS_WINDOW = 30;
+const FAIRNESS_INJECTION_PERIOD = 10;
+
+const SCORE = {
+  alpha: 1.0,
+  beta: 0.7,
+  delta: 0.8,
+  gamma: 0.15,
+};
 
 const ui = {
   startScreen: document.getElementById("start-screen"),
@@ -10,22 +20,37 @@ const ui = {
   hashtags: document.getElementById("hashtags"),
   likeButton: document.getElementById("like-button"),
   dislikeButton: document.getElementById("dislike-button"),
-  resetButton: document.getElementById("reset-personalization"),
-  toggleDebug: document.getElementById("toggle-debug"),
-  debugPanel: document.getElementById("debug-panel"),
+  speakerButton: document.getElementById("speaker-button"),
+  controlsButton: document.getElementById("controls-button"),
+  controlsDrawer: document.getElementById("controls-drawer"),
+  closeControls: document.getElementById("close-controls"),
+  strengthSlider: document.getElementById("strength-slider"),
+  explorationSlider: document.getElementById("exploration-slider"),
+  strengthValue: document.getElementById("strength-value"),
+  explorationValue: document.getElementById("exploration-value"),
+  overrideToggle: document.getElementById("override-toggle"),
+  shuffleToggle: document.getElementById("shuffle-toggle"),
+  tagSearch: document.getElementById("tag-search"),
+  tagList: document.getElementById("tag-list"),
+  resetOverrides: document.getElementById("reset-overrides"),
+  randomizeOverrides: document.getElementById("randomize-overrides"),
+  resetProfile: document.getElementById("reset-profile"),
+  resetHistory: document.getElementById("reset-history"),
 };
 
 const appState = {
   validTags: new Set(),
-  videoMeta: [],
+  videos: [],
   model: null,
-  order: [],
+  timeline: [],
   cursor: -1,
   currentView: null,
-  rendered: new Map(),
+  renderedSlides: new Map(),
   touchStartY: null,
-  debugMode: false,
+  selectionBusy: false,
 };
+
+init();
 
 async function init() {
   try {
@@ -35,20 +60,25 @@ async function init() {
     ]);
 
     appState.validTags = parseValidTags(validTagText);
-    appState.videoMeta = parseTagsFile(tagsText, appState.validTags);
     appState.model = loadModel(appState.validTags);
 
-    if (appState.videoMeta.length === 0) {
+    const parsedVideos = parseTagsFile(tagsText, appState.validTags);
+    appState.videos = await filterLoadableVideos(parsedVideos);
+
+    if (appState.videos.length === 0) {
       ui.startButton.disabled = true;
-      ui.startButton.textContent = "No videos available";
+      ui.startButton.textContent = "No loadable videos";
       return;
     }
 
     bindEvents();
-    beginMetadataPreload(appState.videoMeta);
-  } catch {
+    renderControls();
+    updateSpeakerIcon();
+    preloadMetadata(appState.videos);
+  } catch (error) {
+    console.error("Instavideo init failed", error);
     ui.startButton.disabled = true;
-    ui.startButton.textContent = "Failed to load data";
+    ui.startButton.textContent = "Failed to initialize";
   }
 }
 
@@ -67,7 +97,7 @@ function parseValidTags(text) {
 }
 
 function parseTagsFile(text, validTags) {
-  const videos = [];
+  const list = [];
   const seen = new Set();
 
   text
@@ -75,47 +105,101 @@ function parseTagsFile(text, validTags) {
     .map((line) => line.trim())
     .filter(Boolean)
     .forEach((line) => {
-      const [rawFile, rawTags] = line.split(":");
-      if (!rawFile || !rawTags) {
+      const splitIndex = line.indexOf(":");
+      if (splitIndex === -1) {
         return;
       }
 
-      const file = rawFile.trim();
-      if (!file.endsWith(".mp4") || seen.has(file)) {
+      const fileName = line.slice(0, splitIndex).trim();
+      if (!fileName.endsWith(".mp4") || seen.has(fileName)) {
         return;
       }
 
-      const tags = rawTags
-        .split(",")
-        .map((tag) => tag.trim())
-        .filter((tag) => validTags.has(tag))
-        .slice(0, 10);
+      const tags = Array.from(
+        new Set(
+          line
+            .slice(splitIndex + 1)
+            .split(",")
+            .map((tag) => tag.trim())
+            .filter((tag) => validTags.has(tag))
+        )
+      ).slice(0, MAX_TAGS_PER_VIDEO);
 
       if (tags.length === 0) {
         return;
       }
 
-      seen.add(file);
-      videos.push({
-        id: file,
-        src: `videos/${file}`,
-        tags,
-      });
+      seen.add(fileName);
+      list.push({ id: fileName, src: `./videos/${fileName}`, tags });
     });
 
-  return videos;
+  return list;
+}
+
+async function filterLoadableVideos(videos) {
+  const checks = videos.map(async (video) => {
+    const ok = await canLoadVideo(video.src);
+    return ok ? video : null;
+  });
+  const results = await Promise.all(checks);
+  return results.filter(Boolean);
+}
+
+function canLoadVideo(src) {
+  return new Promise((resolve) => {
+    const video = document.createElement("video");
+    let done = false;
+
+    const finish = (value) => {
+      if (done) return;
+      done = true;
+      video.removeAttribute("src");
+      video.load();
+      resolve(value);
+    };
+
+    const timer = window.setTimeout(() => finish(false), 2500);
+
+    video.preload = "metadata";
+    video.onloadedmetadata = () => {
+      window.clearTimeout(timer);
+      const durationOk = Number.isFinite(video.duration) && video.duration > 0 && video.duration <= 120;
+      finish(durationOk);
+    };
+    video.onerror = () => {
+      window.clearTimeout(timer);
+      finish(false);
+    };
+
+    video.src = src;
+  });
 }
 
 function defaultModel(validTags) {
   const tagModel = {};
-  for (const tag of validTags) {
+  const override = {};
+  validTags.forEach((tag) => {
     tagModel[tag] = { a: 1, b: 1, w: 0 };
-  }
+    override[tag] = 0;
+  });
+
   return {
     tagModel,
+    controls: {
+      strength: 0.7,
+      exploration: 0.2,
+      overrideEnabled: true,
+      shuffleMode: false,
+      override,
+    },
     recentVideos: [],
     recentTagCounts: {},
-    recentTagWindow: [],
+    history: [],
+    audioEnabled: false,
+    selectionCount: 0,
+    playCounts: {},
+    lastPlayedIndex: {},
+    shuffleBag: [],
   };
 }
 
@@ -129,66 +213,101 @@ function loadModel(validTags) {
 
   try {
     const parsed = JSON.parse(raw);
-    const normalized = {
+    const model = {
       tagModel: {},
-      recentVideos: Array.isArray(parsed.recentVideos) ? parsed.recentVideos.slice(-RECENT_VIDEO_BAN) : [],
-      recentTagCounts: parsed.recentTagCounts && typeof parsed.recentTagCounts === "object" ? parsed.recentTagCounts : {},
-      recentTagWindow: Array.isArray(parsed.recentTagWindow) ? parsed.recentTagWindow.slice(-RECENT_TAG_WINDOW) : [],
+      controls: {
+        strength: clamp(parsed?.controls?.strength ?? 0.7, 0, 1),
+        exploration: clamp(parsed?.controls?.exploration ?? 0.2, 0, 1),
+        overrideEnabled: Boolean(parsed?.controls?.overrideEnabled ?? true),
+        shuffleMode: Boolean(parsed?.controls?.shuffleMode ?? false),
+        override: {},
+      },
+      recentVideos: Array.isArray(parsed?.recentVideos) ? parsed.recentVideos.slice(-RECENT_VIDEO_BAN) : [],
+      recentTagCounts: parsed?.recentTagCounts && typeof parsed.recentTagCounts === "object" ? parsed.recentTagCounts : {},
+      history: Array.isArray(parsed?.history) ? parsed.history : [],
+      audioEnabled: Boolean(parsed?.audioEnabled ?? false),
+      selectionCount: Number.isFinite(parsed?.selectionCount) ? parsed.selectionCount : 0,
+      playCounts: parsed?.playCounts && typeof parsed.playCounts === "object" ? parsed.playCounts : {},
+      lastPlayedIndex: parsed?.lastPlayedIndex && typeof parsed.lastPlayedIndex === "object" ? parsed.lastPlayedIndex : {},
+      shuffleBag: Array.isArray(parsed?.shuffleBag) ? parsed.shuffleBag : [],
     };
 
-    for (const tag of validTags) {
-      const existing = parsed.tagModel?.[tag];
-      normalized.tagModel[tag] = {
-        a: Number.isFinite(existing?.a) ? Math.max(1, existing.a) : 1,
-        b: Number.isFinite(existing?.b) ? Math.max(1, existing.b) : 1,
-        w: Number.isFinite(existing?.w) ? clamp(existing.w, -3, 3) : 0,
+    validTags.forEach((tag) => {
+      const row = parsed?.tagModel?.[tag] || {};
+      model.tagModel[tag] = {
+        a: Math.max(1, Number.isFinite(row.a) ? row.a : 1),
+        b: Math.max(1, Number.isFinite(row.b) ? row.b : 1),
+        w: clamp(Number.isFinite(row.w) ? row.w : 0, -3, 3),
       };
-    }
+      model.controls.override[tag] = clamp(parsed?.controls?.override?.[tag] ?? 0, -3, 3);
+    });
 
-    persistModel(normalized);
-    return normalized;
-  } catch {
+    persistModel(model);
+    return model;
+  } catch (error) {
+    console.error("Failed to load local model, resetting", error);
     persistModel(fallback);
     return fallback;
   }
 }
 
 function persistModel(model) {
-  localStorage.setItem(PERSONALIZATION_KEY, JSON.stringify(model));
+  localStorage.setItem(PERSONALIZATION_KEY, JSON.stringify(model, null, 2));
 }
 
 function bindEvents() {
   ui.startButton.addEventListener("click", startFeed);
-  ui.likeButton.addEventListener("click", () => applyVote("like"));
-  ui.dislikeButton.addEventListener("click", () => applyVote("dislike"));
-  ui.resetButton.addEventListener("click", resetPersonalization);
-  ui.toggleDebug.addEventListener("click", toggleDebugMode);
+  ui.likeButton.addEventListener("click", () => registerVote("like"));
+  ui.dislikeButton.addEventListener("click", () => registerVote("dislike"));
+  ui.speakerButton.addEventListener("click", toggleAudioPreference);
+  ui.controlsButton.addEventListener("click", () => toggleControls(true));
+  ui.closeControls.addEventListener("click", () => toggleControls(false));
+
+  ui.strengthSlider.addEventListener("input", () => {
+    appState.model.controls.strength = Number(ui.strengthSlider.value);
+    persistModel(appState.model);
+    renderControlsHeader();
+  });
+
+  ui.explorationSlider.addEventListener("input", () => {
+    appState.model.controls.exploration = Number(ui.explorationSlider.value);
+    persistModel(appState.model);
+    renderControlsHeader();
+  });
+
+  ui.overrideToggle.addEventListener("change", () => {
+    appState.model.controls.overrideEnabled = ui.overrideToggle.checked;
+    persistModel(appState.model);
+  });
+
+  ui.shuffleToggle.addEventListener("change", () => {
+    appState.model.controls.shuffleMode = ui.shuffleToggle.checked;
+    if (ui.shuffleToggle.checked) {
+      refillShuffleBag();
+    }
+    persistModel(appState.model);
+  });
+
+  ui.tagSearch.addEventListener("input", renderTagRows);
+  ui.resetOverrides.addEventListener("click", handleResetOverrides);
+  ui.randomizeOverrides.addEventListener("click", handleRandomizeOverrides);
+  ui.resetProfile.addEventListener("click", handleResetProfile);
+  ui.resetHistory.addEventListener("click", handleResetHistory);
 
   window.addEventListener(
     "wheel",
     (event) => {
-      if (!ui.feedScreen.classList.contains("active")) {
-        return;
-      }
-      if (event.deltaY > 0) {
-        goNext();
-      } else if (event.deltaY < 0) {
-        goPrev();
-      }
+      if (!ui.feedScreen.classList.contains("active") || appState.selectionBusy) return;
+      if (event.deltaY > 0) scheduleTransition(1);
+      if (event.deltaY < 0) scheduleTransition(-1);
     },
     { passive: true }
   );
 
   window.addEventListener("keydown", (event) => {
-    if (!ui.feedScreen.classList.contains("active")) {
-      return;
-    }
-    if (event.key === "ArrowDown") {
-      goNext();
-    }
-    if (event.key === "ArrowUp") {
-      goPrev();
-    }
+    if (!ui.feedScreen.classList.contains("active") || appState.selectionBusy) return;
+    if (event.key === "ArrowDown") scheduleTransition(1);
+    if (event.key === "ArrowUp") scheduleTransition(-1);
   });
 
   window.addEventListener(
@@ -202,176 +321,242 @@ function bindEvents() {
   window.addEventListener(
     "touchend",
     (event) => {
-      if (!ui.feedScreen.classList.contains("active") || appState.touchStartY === null) {
-        return;
-      }
+      if (!ui.feedScreen.classList.contains("active") || appState.selectionBusy || appState.touchStartY === null) return;
       const endY = event.changedTouches[0]?.clientY;
-      if (typeof endY !== "number") {
-        return;
-      }
+      if (typeof endY !== "number") return;
       const delta = appState.touchStartY - endY;
-      if (delta > 35) {
-        goNext();
-      } else if (delta < -35) {
-        goPrev();
-      }
+      if (delta > 35) scheduleTransition(1);
+      if (delta < -35) scheduleTransition(-1);
       appState.touchStartY = null;
     },
     { passive: true }
   );
 }
 
+function renderControls() {
+  renderControlsHeader();
+  renderTagRows();
+}
+
+function renderControlsHeader() {
+  ui.strengthSlider.value = String(appState.model.controls.strength);
+  ui.explorationSlider.value = String(appState.model.controls.exploration);
+  ui.overrideToggle.checked = appState.model.controls.overrideEnabled;
+  ui.shuffleToggle.checked = appState.model.controls.shuffleMode;
+  ui.strengthValue.textContent = appState.model.controls.strength.toFixed(2);
+  ui.explorationValue.textContent = appState.model.controls.exploration.toFixed(2);
+}
+
+function renderTagRows() {
+  const q = ui.tagSearch.value.trim().toLowerCase();
+  ui.tagList.innerHTML = "";
+  const tags = Array.from(appState.validTags)
+    .sort()
+    .filter((tag) => tag.toLowerCase().includes(q));
+
+  tags.forEach((tag) => {
+    const row = appState.model.tagModel[tag];
+    const p = row.a / (row.a + row.b);
+    const learned = SCORE.alpha * (p - 0.5) * Math.log(1 + row.a + row.b) + SCORE.beta * row.w;
+
+    const item = document.createElement("div");
+    item.className = "tag-row";
+
+    const meta = document.createElement("div");
+    meta.className = "tag-meta";
+    meta.innerHTML = `<strong>${tag}</strong><span>Learned ${learned.toFixed(2)}</span>`;
+
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.min = "-3";
+    slider.max = "3";
+    slider.step = "0.1";
+    slider.value = String(appState.model.controls.override[tag] ?? 0);
+
+    const value = document.createElement("span");
+    value.textContent = `Override ${Number(slider.value).toFixed(1)}`;
+
+    slider.addEventListener("input", () => {
+      appState.model.controls.override[tag] = Number(slider.value);
+      value.textContent = `Override ${Number(slider.value).toFixed(1)}`;
+      persistModel(appState.model);
+    });
+
+    item.append(meta, slider, value);
+    ui.tagList.appendChild(item);
+  });
+}
+
+function handleResetOverrides() {
+  Object.keys(appState.model.controls.override).forEach((tag) => {
+    appState.model.controls.override[tag] = 0;
+  });
+  persistModel(appState.model);
+  renderTagRows();
+}
+
+function handleRandomizeOverrides() {
+  Object.keys(appState.model.controls.override).forEach((tag) => {
+    appState.model.controls.override[tag] = Number((Math.random() - 0.5).toFixed(2));
+  });
+  persistModel(appState.model);
+  renderTagRows();
+}
+
+function handleResetProfile() {
+  Object.keys(appState.model.tagModel).forEach((tag) => {
+    appState.model.tagModel[tag] = { a: 1, b: 1, w: 0 };
+  });
+  persistModel(appState.model);
+  renderTagRows();
+}
+
+function handleResetHistory() {
+  appState.model.recentVideos = [];
+  appState.model.recentTagCounts = {};
+  appState.model.history = [];
+  appState.model.playCounts = {};
+  appState.model.lastPlayedIndex = {};
+  appState.model.selectionCount = 0;
+  appState.model.shuffleBag = [];
+  persistModel(appState.model);
+}
+
+function toggleAudioPreference() {
+  appState.model.audioEnabled = !appState.model.audioEnabled;
+  persistModel(appState.model);
+  updateSpeakerIcon();
+
+  const currentSlide = appState.renderedSlides.get(appState.timeline[appState.cursor]);
+  const currentVideo = currentSlide?.querySelector("video");
+  if (currentVideo) {
+    currentVideo.muted = !appState.model.audioEnabled;
+    currentVideo.play().catch((error) => console.error("Video playback error", error));
+  }
+}
+
+function updateSpeakerIcon() {
+  ui.speakerButton.textContent = appState.model.audioEnabled ? "🔊" : "🔇";
+  ui.speakerButton.setAttribute("aria-label", appState.model.audioEnabled ? "Mute" : "Unmute");
+}
+
+function toggleControls(show) {
+  ui.controlsDrawer.hidden = !show;
+}
+
 function startFeed() {
   ui.startScreen.classList.remove("active");
   ui.feedScreen.classList.add("active");
-  if (appState.cursor === -1) {
-    const first = selectNextVideo();
-    appState.order.push(first.id);
-    appState.cursor = 0;
-    showVideo(first.id);
-  }
+
+  if (appState.cursor !== -1) return;
+  const first = selectNextVideo();
+  appState.timeline.push(first.id);
+  appState.cursor = 0;
+  showVideo(first.id);
 }
 
-function getVideoMetaById(id) {
-  return appState.videoMeta.find((video) => video.id === id);
+function scheduleTransition(direction) {
+  appState.selectionBusy = true;
+  requestAnimationFrame(() => {
+    if (direction > 0) goNext();
+    if (direction < 0) goPrev();
+    appState.selectionBusy = false;
+  });
 }
 
 function goNext() {
-  if (!ui.feedScreen.classList.contains("active")) {
-    return;
-  }
-
   finalizeCurrentWatch();
 
-  if (appState.cursor < appState.order.length - 1) {
+  if (appState.cursor < appState.timeline.length - 1) {
     appState.cursor += 1;
-    showVideo(appState.order[appState.cursor]);
+    showVideo(appState.timeline[appState.cursor]);
     return;
   }
 
   const next = selectNextVideo();
-  appState.order.push(next.id);
+  appState.timeline.push(next.id);
   appState.cursor += 1;
   showVideo(next.id);
 }
 
 function goPrev() {
-  if (!ui.feedScreen.classList.contains("active") || appState.cursor <= 0) {
-    return;
-  }
+  if (appState.cursor <= 0) return;
   finalizeCurrentWatch();
   appState.cursor -= 1;
-  showVideo(appState.order[appState.cursor]);
+  showVideo(appState.timeline[appState.cursor]);
 }
 
 function showVideo(videoId) {
-  const activeMeta = getVideoMetaById(videoId);
-  if (!activeMeta) {
-    return;
-  }
+  const meta = getVideoMeta(videoId);
+  if (!meta) return;
 
-  for (const [id, node] of appState.rendered.entries()) {
-    if (id !== videoId) {
-      node.classList.remove("active");
-      const v = node.querySelector("video");
-      if (v) {
-        v.pause();
-      }
-    }
-  }
+  appState.renderedSlides.forEach((slide, id) => {
+    if (id === videoId) return;
+    slide.classList.remove("active");
+    const v = slide.querySelector("video");
+    v?.pause();
+  });
 
-  const slide = getOrCreateSlide(activeMeta);
+  const slide = getOrCreateSlide(meta);
   slide.classList.add("active");
+
   const video = slide.querySelector("video");
   if (video) {
     video.currentTime = 0;
-    video.play().catch(() => {});
+    video.muted = !appState.model.audioEnabled;
+    video.play().catch((error) => console.error("Video playback error", error));
   }
 
-  ui.hashtags.textContent = activeMeta.tags.join(" ");
-  appState.currentView = {
-    videoId,
-    startedAt: performance.now(),
-    accumulatedSeconds: 0,
-    seenAtLeastOneFrame: false,
-  };
+  ui.hashtags.textContent = meta.tags.join(" ");
+  appState.currentView = { videoId, startedAt: performance.now(), accumulatedSeconds: 0 };
 
-  video?.addEventListener(
-    "timeupdate",
-    () => {
-      if (appState.currentView?.videoId === videoId) {
-        appState.currentView.seenAtLeastOneFrame = true;
-      }
-    },
-    { once: true }
-  );
-
-  registerExposure(activeMeta);
-  cleanupRenderedSlides();
-  warmAdjacentSlides();
-  renderDebug();
+  registerExposure(meta);
+  maintainSlides();
+  warmAdjacent();
 }
 
 function getOrCreateSlide(meta) {
-  const existing = appState.rendered.get(meta.id);
-  if (existing) {
-    return existing;
-  }
+  if (appState.renderedSlides.has(meta.id)) return appState.renderedSlides.get(meta.id);
 
   const slide = document.createElement("article");
   slide.className = "video-slide";
-  slide.dataset.videoId = meta.id;
 
   const video = document.createElement("video");
   video.src = meta.src;
+  video.muted = !appState.model.audioEnabled;
   video.loop = true;
-  video.muted = true;
   video.playsInline = true;
   video.preload = "metadata";
 
   slide.appendChild(video);
   ui.stage.appendChild(slide);
-  appState.rendered.set(meta.id, slide);
+  appState.renderedSlides.set(meta.id, slide);
   return slide;
 }
 
-function warmAdjacentSlides() {
-  const prevId = appState.order[appState.cursor - 1];
-  const nextId = appState.order[appState.cursor + 1];
-  [prevId, nextId]
+function warmAdjacent() {
+  [appState.timeline[appState.cursor - 1], appState.timeline[appState.cursor + 1]]
     .filter(Boolean)
     .forEach((id) => {
-      const meta = getVideoMetaById(id);
-      if (meta) {
-        getOrCreateSlide(meta);
-      }
+      const meta = getVideoMeta(id);
+      if (meta) getOrCreateSlide(meta);
     });
 }
 
-function cleanupRenderedSlides() {
-  const keep = new Set([
-    appState.order[appState.cursor - 1],
-    appState.order[appState.cursor],
-    appState.order[appState.cursor + 1],
-  ]);
-
-  for (const [id, node] of appState.rendered.entries()) {
-    if (!keep.has(id)) {
-      node.remove();
-      appState.rendered.delete(id);
-    }
-  }
+function maintainSlides() {
+  const keep = new Set([appState.timeline[appState.cursor - 1], appState.timeline[appState.cursor], appState.timeline[appState.cursor + 1]]);
+  appState.renderedSlides.forEach((slide, id) => {
+    if (keep.has(id)) return;
+    slide.remove();
+    appState.renderedSlides.delete(id);
+  });
 }
 
 function finalizeCurrentWatch() {
-  if (!appState.currentView) {
-    return;
-  }
-
-  const meta = getVideoMetaById(appState.currentView.videoId);
-  const slide = appState.rendered.get(appState.currentView.videoId);
+  if (!appState.currentView) return;
+  const meta = getVideoMeta(appState.currentView.videoId);
+  const slide = appState.renderedSlides.get(appState.currentView.videoId);
   const video = slide?.querySelector("video");
-
   if (!meta || !video) {
     appState.currentView = null;
     return;
@@ -381,16 +566,14 @@ function finalizeCurrentWatch() {
   appState.currentView.accumulatedSeconds += Math.max(0, elapsed);
 
   const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 120;
-  const watchedSeconds = Math.min(appState.currentView.accumulatedSeconds, duration);
-  const r = clamp(watchedSeconds / duration, 0, 1);
+  const r = clamp(appState.currentView.accumulatedSeconds / duration, 0, 1);
   const s = watchSignal(r);
 
   meta.tags.forEach((tag) => {
-    const slot = appState.model.tagModel[tag];
-    slot.w = clamp(slot.w + 0.1 * s, -3, 3);
-    slot.w *= 0.995;
-    slot.a = 1 + (slot.a - 1) * 0.999;
-    slot.b = 1 + (slot.b - 1) * 0.999;
+    const row = appState.model.tagModel[tag];
+    row.w = clamp(row.w + 0.1 * s, -3, 3) * 0.995;
+    row.a = 1 + (row.a - 1) * 0.999;
+    row.b = 1 + (row.b - 1) * 0.999;
   });
 
   persistModel(appState.model);
@@ -398,161 +581,173 @@ function finalizeCurrentWatch() {
 }
 
 function watchSignal(r) {
-  if (r < 0.2) {
-    return -1 * ((0.2 - r) / 0.2);
-  }
-  if (r < 0.5) {
-    return 0.2 * ((r - 0.2) / 0.3);
-  }
+  if (r < 0.2) return -1 * ((0.2 - r) / 0.2);
+  if (r < 0.5) return 0.2 * ((r - 0.2) / 0.3);
   return 0.2 + 0.8 * ((r - 0.5) / 0.5);
 }
 
-function applyVote(type) {
-  const currentId = appState.order[appState.cursor];
-  const meta = getVideoMetaById(currentId);
-  if (!meta) {
-    return;
-  }
+function registerVote(type) {
+  const currentId = appState.timeline[appState.cursor];
+  const meta = getVideoMeta(currentId);
+  if (!meta) return;
 
   meta.tags.forEach((tag) => {
-    if (type === "like") {
-      appState.model.tagModel[tag].a += 1;
-    } else {
-      appState.model.tagModel[tag].b += 1;
-    }
-
-    appState.model.tagModel[tag].w *= 0.995;
-    appState.model.tagModel[tag].a = 1 + (appState.model.tagModel[tag].a - 1) * 0.999;
-    appState.model.tagModel[tag].b = 1 + (appState.model.tagModel[tag].b - 1) * 0.999;
+    const row = appState.model.tagModel[tag];
+    if (type === "like") row.a += 1;
+    if (type === "dislike") row.b += 1;
+    row.w *= 0.995;
+    row.a = 1 + (row.a - 1) * 0.999;
+    row.b = 1 + (row.b - 1) * 0.999;
   });
 
   persistModel(appState.model);
-  renderDebug();
+  renderTagRows();
 }
 
-function registerExposure(videoMeta) {
-  appState.model.recentVideos.push(videoMeta.id);
+function registerExposure(video) {
+  appState.model.history.push(video.id);
+  appState.model.selectionCount += 1;
+  appState.model.playCounts[video.id] = (appState.model.playCounts[video.id] || 0) + 1;
+  appState.model.lastPlayedIndex[video.id] = appState.model.selectionCount;
+
+  appState.model.recentVideos.push(video.id);
   appState.model.recentVideos = appState.model.recentVideos.slice(-RECENT_VIDEO_BAN);
 
-  const windowList = appState.model.recentTagWindow;
-  windowList.push(videoMeta.id);
-  while (windowList.length > RECENT_TAG_WINDOW) {
-    windowList.shift();
-  }
-
+  const lastTenIds = appState.model.history.slice(-RECENT_TAG_WINDOW);
   const counts = {};
-  windowList.forEach((id) => {
-    const meta = getVideoMetaById(id);
-    meta?.tags.forEach((tag) => {
+  lastTenIds.forEach((id) => {
+    getVideoMeta(id)?.tags.forEach((tag) => {
       counts[tag] = (counts[tag] || 0) + 1;
     });
   });
   appState.model.recentTagCounts = counts;
+
   persistModel(appState.model);
 }
 
 function selectNextVideo() {
   const banned = new Set(appState.model.recentVideos);
-  const candidates = appState.videoMeta.filter((video) => !banned.has(video.id));
-  const pool = candidates.length > 0 ? candidates : appState.videoMeta;
+  const candidates = appState.videos.filter((video) => !banned.has(video.id));
+  const pool = candidates.length > 0 ? candidates : appState.videos;
 
-  if (Math.random() < 0.2) {
+  if (appState.model.controls.shuffleMode) {
+    const shufflePick = pickShuffle(pool, banned);
+    if (shufflePick) return shufflePick;
+  }
+
+  if (shouldInjectFairness() && pool.length > 0) {
+    return pickFairnessCandidate(pool);
+  }
+
+  if (Math.random() < appState.model.controls.exploration && pool.length > 0) {
     return pool[Math.floor(Math.random() * pool.length)];
   }
 
-  const scored = pool.map((video) => ({
-    video,
-    score: scoreVideo(video),
-  }));
-
-  const temperature = 0.7;
-  const maxScore = Math.max(...scored.map((entry) => entry.score));
-  const exps = scored.map((entry) => Math.exp((entry.score - maxScore) / temperature));
-  const total = exps.reduce((sum, x) => sum + x, 0);
+  const tau = 0.4 + appState.model.controls.exploration * 0.8;
+  const scored = pool.map((video) => ({ video, score: scoreVideo(video) - recencyPenalty(video.id) }));
+  const maxScore = Math.max(...scored.map((v) => v.score));
+  const expVals = scored.map((entry) => Math.exp((entry.score - maxScore) / tau));
+  const total = expVals.reduce((sum, n) => sum + n, 0);
 
   let draw = Math.random() * total;
   for (let i = 0; i < scored.length; i += 1) {
-    draw -= exps[i];
-    if (draw <= 0) {
-      return scored[i].video;
-    }
+    draw -= expVals[i];
+    if (draw <= 0) return scored[i].video;
   }
+
   return scored[scored.length - 1].video;
 }
 
+function shouldInjectFairness() {
+  if (appState.model.selectionCount === 0) return false;
+  return appState.model.selectionCount % FAIRNESS_INJECTION_PERIOD === 0;
+}
+
+function pickFairnessCandidate(pool) {
+  const candidates = [...pool];
+  candidates.sort((a, b) => fairnessRank(a) - fairnessRank(b));
+  return candidates[0] || pool[Math.floor(Math.random() * pool.length)];
+}
+
+function fairnessRank(video) {
+  const lastPlayed = appState.model.lastPlayedIndex[video.id] ?? -Infinity;
+  const recencyAge = appState.model.selectionCount - lastPlayed;
+  const plays = appState.model.playCounts[video.id] || 0;
+  return plays * 1000 - recencyAge;
+}
+
+function pickShuffle(pool, banned) {
+  if (!Array.isArray(appState.model.shuffleBag) || appState.model.shuffleBag.length === 0) {
+    refillShuffleBag();
+  }
+
+  const bagCandidates = appState.model.shuffleBag.filter((id) => !banned.has(id) && pool.some((video) => video.id === id));
+  if (bagCandidates.length === 0) {
+    refillShuffleBag();
+    return appState.videos.find((video) => appState.model.shuffleBag[0] === video.id) || null;
+  }
+
+  const id = bagCandidates[0];
+  appState.model.shuffleBag = appState.model.shuffleBag.filter((item) => item !== id);
+  persistModel(appState.model);
+  return appState.videos.find((video) => video.id === id) || null;
+}
+
+function refillShuffleBag() {
+  const ids = appState.videos.map((video) => video.id);
+  for (let i = ids.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+  }
+  appState.model.shuffleBag = ids;
+}
+
+function recencyPenalty(videoId) {
+  const lastPlayed = appState.model.lastPlayedIndex[videoId];
+  if (!Number.isFinite(lastPlayed)) return 0;
+  const age = appState.model.selectionCount - lastPlayed;
+  if (age <= 0 || age > FAIRNESS_WINDOW) return 0;
+
+  const normalized = age / FAIRNESS_WINDOW;
+  return 1.4 * Math.exp(-3 * normalized);
+}
+
 function scoreVideo(video) {
-  const perTag = video.tags.map((tag) => {
+  const tagScores = video.tags.map((tag) => {
     const row = appState.model.tagModel[tag] || { a: 1, b: 1, w: 0 };
     const p = row.a / (row.a + row.b);
     const c = Math.log(1 + row.a + row.b);
-    return (p - 0.5) * c + 0.7 * row.w;
+    const learned = SCORE.alpha * (p - 0.5) * c + SCORE.beta * row.w;
+    const manual = appState.model.controls.overrideEnabled ? SCORE.delta * (appState.model.controls.override[tag] || 0) : 0;
+    return appState.model.controls.strength * learned + manual;
   });
 
-  const base = perTag.reduce((sum, n) => sum + n, 0) / video.tags.length;
+  const baseScore = tagScores.reduce((sum, n) => sum + n, 0) / video.tags.length;
   const overexposure =
-    0.15 *
+    SCORE.gamma *
     (video.tags.reduce((sum, tag) => sum + (appState.model.recentTagCounts[tag] || 0), 0) / video.tags.length);
 
-  return base - overexposure;
+  return baseScore - overexposure;
 }
 
-function resetPersonalization() {
-  appState.model = defaultModel(appState.validTags);
-  persistModel(appState.model);
-  renderDebug();
-}
-
-function toggleDebugMode() {
-  appState.debugMode = !appState.debugMode;
-  ui.toggleDebug.textContent = `Debug: ${appState.debugMode ? "On" : "Off"}`;
-  ui.debugPanel.hidden = !appState.debugMode;
-  renderDebug();
-}
-
-function renderDebug() {
-  if (!appState.debugMode) {
-    return;
-  }
-
-  const topTags = Object.entries(appState.model.tagModel)
-    .sort((a, b) => b[1].w - a[1].w)
-    .slice(0, 20)
-    .map(([tag, values]) => `${tag.padEnd(14)} a=${values.a.toFixed(2)} b=${values.b.toFixed(2)} w=${values.w.toFixed(3)}`)
-    .join("\n");
-
-  ui.debugPanel.textContent = [
-    "Top tag affinities (by w):",
-    topTags,
-    "",
-    `Recent videos: ${appState.model.recentVideos.join(", ") || "(none)"}`,
-  ].join("\n");
-}
-
-function beginMetadataPreload(videos) {
-  let index = 0;
-
-  const preloadChunk = () => {
-    const upper = Math.min(index + 8, videos.length);
-    for (; index < upper; index += 1) {
+function preloadMetadata(videos) {
+  let i = 0;
+  const chunk = () => {
+    const stop = Math.min(i + 8, videos.length);
+    for (; i < stop; i += 1) {
       const v = document.createElement("video");
-      v.src = videos[index].src;
+      v.src = videos[i].src;
       v.preload = "metadata";
     }
-
-    if (index < videos.length) {
-      if ("requestIdleCallback" in window) {
-        window.requestIdleCallback(preloadChunk);
-      } else {
-        window.setTimeout(preloadChunk, 20);
-      }
-    }
+    if (i < videos.length) window.setTimeout(chunk, 20);
   };
+  chunk();
+}
 
-  preloadChunk();
+function getVideoMeta(id) {
+  return appState.videos.find((video) => video.id === id);
 }
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
-
-init();
