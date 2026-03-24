@@ -1,0 +1,66 @@
+scary.mp4: #ai
+antratica.mp4: #scary
+baby.mp4: #pets
+bieber.mp4: #music
+black_cook.mp4: #cooking #food
+bondi.mp4: #bondi
+bondi2.mp4: #bondi
+bondi3.mp4: #bondi
+bonnet.mp4: #funny
+bunker.mp4: #outdoor
+cars.mp4: #cars
+cash-bike.mp4: #food
+cat.mp4: #pets
+challange.mp4: #vlog
+chinawar.mp4: #anime
+cook.mp4: #cooking
+cooking.mp4: #cooking, #recipes
+cooking2.mp4: #cooking
+cooking3.mp4: #cooking, #food
+dance.mp4: #dance
+dance1.mp4: #dance
+dance3.mp4: #dance
+dance4.mp4: #dance
+download.mp4: #random
+drive.mp4: #cars
+farming.mp4: #random
+fish.mp4: #
+friend.mp4: #ragebait
+fun.mp4:  #fun
+fun2.mp4: #fun
+fun3.mp4: #fun
+girl.mp4: #beauty
+girl_dance.mp4: #dance
+hair.mp4: #beauty
+havingfun.mp4: #fun
+hospital-rescue.mp4: #random
+ice.mp4: #ice
+internet.mp4: #internet
+ipad.mp4: #tech
+language.mp4: #funny
+lives.mp4: #lifehacks
+makeup.mp4: #beauty, #makeup
+man.mp4: #random
+mcdonalds.mp4: #fun
+mum.mp4: #memes
+night_guard.mp4: #ai, #scary, #gaming
+nuclear.mp4: #nuclear
+nz.mp4: #nz
+petrodollar.mp4: #random
+photo.mp4: #photography
+pig.mp4: #random
+politics.mp4: #politics
+prisner.mp4: #news
+privacy.mp4: #news, #ai, #privacy
+ragebait.mp4: #ragebait, #funny
+school-teacher-crashout.mp4: #funny, #ragebait, #school
+school.mp4: #school
+shave.mp4: #beauty
+shop.mp4: #shopping
+shower.mp4: #beauty
+skiing.mp4: #sport, #outdoor
+slime.mp4: #diy
+social.mp4: #funny
+test.mp4: #random
+throwback.mp4: #beauty
+tree.mp4: #outdoor

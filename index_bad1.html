@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Instavideo</title>
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body>
+    <main id="app">
+      <section id="start-screen" class="screen active" aria-label="Start screen">
+        <h1>Instavideo</h1>
+        <button id="start-button" class="primary-button" type="button">Start</button>
+      </section>
+
+      <section id="feed-screen" class="screen" aria-label="Video feed">
+        <div id="video-stage" class="video-stage" role="region" aria-live="polite"></div>
+
+        <div class="controls-panel" aria-label="Video actions">
+        <div class="video-actions" aria-label="Video actions">
+          <button id="speaker-button" class="icon-button" type="button" aria-label="Toggle sound">🔇</button>
+          <button id="like-button" class="icon-button" type="button" aria-label="Like video">👍</button>
+          <button id="dislike-button" class="icon-button" type="button" aria-label="Dislike video">👎</button>
+          <button id="controls-button" class="icon-button" type="button" aria-label="Open controls">⚙️</button>
+        </div>
+
+        <div id="hashtags" class="hashtags" aria-label="Video hashtags"></div>
+
+        <div class="feed-actions">
+          <button id="reset-personalization" class="secondary-button" type="button">Reset personalization</button>
+          <button id="toggle-debug" class="secondary-button" type="button">Debug: Off</button>
+        </div>
+        <aside id="controls-drawer" class="controls-drawer" aria-label="Personalization controls" hidden>
+          <div class="drawer-header">
+            <h2>Controls</h2>
+            <button id="close-controls" class="secondary-button" type="button">Close</button>
+          </div>
+
+          <label class="control-row">
+            <span>Personalization Strength</span>
+            <input id="strength-slider" type="range" min="0" max="1" step="0.01" />
+            <span id="strength-value"></span>
+          </label>
+
+          <label class="control-row">
+            <span>Randomness / Exploration</span>
+            <input id="exploration-slider" type="range" min="0" max="1" step="0.01" />
+            <span id="exploration-value"></span>
+          </label>
+
+          <label class="toggle-row">
+            <span>Enable Manual Tag Overrides</span>
+            <input id="override-toggle" type="checkbox" />
+          </label>
+
+          <label class="toggle-row">
+            <span>Shuffle mode (cycle all videos once)</span>
+            <input id="shuffle-toggle" type="checkbox" />
+          </label>
+
+          <label class="control-row">
+            <span>Search tags</span>
+            <input id="tag-search" type="search" placeholder="Filter tags..." />
+          </label>
+
+          <div class="drawer-buttons">
+            <button id="reset-overrides" class="secondary-button" type="button">Reset Overrides</button>
+            <button id="randomize-overrides" class="secondary-button" type="button">Randomise Overrides</button>
+            <button id="reset-profile" class="secondary-button" type="button">Reset Learned Profile</button>
+            <button id="reset-history" class="secondary-button" type="button">Reset History</button>
+          </div>
+
+        <aside id="debug-panel" class="debug-panel" hidden></aside>
+          <div id="tag-list" class="tag-list" aria-label="Tag override list"></div>
+        </aside>
+      </section>
+    </main>
+
+    <script type="module" src="js/app.js"></script>
+  </body>
+</html>
