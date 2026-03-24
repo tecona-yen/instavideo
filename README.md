@@ -14,7 +14,17 @@ Go to [text](https://tecona-yen.github.io/instavideo/) for an instant video feed
 - `tags.txt`
 - `valid_tags.txt`
 
-## Run locally
+
+## Run locally with IIS (Windows Only)
+
+Run the install-iis.cmd file to install IIS and copy the website files automatically.
+
+```bash
+cd instavideo
+install-iis.cmd
+```
+
+## Run locally with Python (Requires Python)
 
 Because the app fetches text files, use a static server, try this command:
 
