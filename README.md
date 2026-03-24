@@ -13,7 +13,7 @@ Instavideo is a front-end-only short-form video feed (HTML/CSS/JS). It uses `loc
 
 ## Run locally
 
-Because the app fetches text files, use a static server:
+Because the app fetches text files, use a static server, try this command:
 
 ```bash
 python3 -m http.server 8000
@@ -51,3 +51,7 @@ In the feed, use the ⚙️ button to open controls:
 - Randomise Overrides
 - Reset Learned Profile
 - Reset History
+## Problems
+
+- Issue when scrolling, multiple videos play
+- The default amount of videos in limited, you will need to add more to make a full functional app that people will want to spend time on
