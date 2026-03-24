@@ -3,7 +3,7 @@
 Instavideo is a front-end-only short-form video feed (HTML/CSS/JS). It uses `localStorage` for all personalization and does not require login, backend code, cookies, or uploads.
 
 # Start scrolling immedately
-Go to [text](https://tecona-yen.github.io/instavideo/) for an instant video feed!
+Go to [Hosted Website](https://tecona-yen.github.io/instavideo/) for an instant video feed!
 
 ## Project structure
 
@@ -17,12 +17,21 @@ Go to [text](https://tecona-yen.github.io/instavideo/) for an instant video feed
 
 ## Run locally with IIS (Windows Only)
 
-Run the install-iis.cmd file to install IIS and copy the website files automatically.
+Install IIS using the add or remove features option, and install all the module expect CGI, or enter this command
 
 ```bash
-cd instavideo
-install-iis.cmd
+DISM /online /enable-feature /featureName:IIS-WebServerRole /All
 ```
+Now download copy the files from instavideo-main to the C:\inetpub\wwwroot folder or
+```bash
+gh repo clone tecona-yen/instavideo C:\inetpub\wwwroot
+```
+Restart IIS and test to make sure the website is working
+```bash
+iisreset
+start chrome 127.0.0.1:80
+```
+
 
 ## Run locally with Python (Requires Python)
 
