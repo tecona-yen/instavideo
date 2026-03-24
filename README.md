@@ -54,4 +54,4 @@ In the feed, use the ⚙️ button to open controls:
 ## Problems
 
 - Issue when scrolling, multiple videos play
-- The default amount of videos in limited, you will need to add more to make a full functional app that people will want to spend time on
+- The default, starting amount of videos is inherently limited, you will need to add far more content to make a full functional app that people will want to spend time on
