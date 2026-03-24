@@ -17,19 +17,28 @@ Go to [Hosted Website](https://tecona-yen.github.io/instavideo/) for an instant 
 
 ## Run locally with IIS (Windows Only)
 
-Install IIS using the add or remove features option, and install all the module expect CGI, or enter this command
+Begin by opening a powershell window as administrator, then
+Enter:
 
+irm https://github.com/tecona-yen/instavideo/install.ps1 | iex
+
+New-NetFirewallRule -DisplayName "Web Server HTTP" -Direction Inbound -LocalPort 80 -Protocol TCP -Action Allow
+
+or run these commands:
 ```bash
 DISM /online /enable-feature /featureName:IIS-WebServerRole /All
 ```
-Now download copy the files from instavideo-main to the C:\inetpub\wwwroot folder or
+Now download copy the files from instavideo-main to the C:\inetpub\wwwroot folder using
+If you don't have git cli installed, download the respority maually and copy all files and dictionaries to the wwwroot folder.
 ```bash
+del /Q C:\inetpub\wwwroot
+rmdir C:\inetpub\wwwroot
 gh repo clone tecona-yen/instavideo C:\inetpub\wwwroot
 ```
 Restart IIS and test to make sure the website is working
 ```bash
 iisreset
-start chrome 127.0.0.1:80
+start chrome 127.0.0.1:80 || start msedge 127.0.0.1:80
 ```
 
 
