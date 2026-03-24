@@ -2,6 +2,9 @@
 
 Instavideo is a front-end-only short-form video feed (HTML/CSS/JS). It uses `localStorage` for all personalization and does not require login, backend code, cookies, or uploads.
 
+# Start scrolling immedately
+Go to [text](https://tecona-yen.github.io/instavideo/) for an instant video feed!
+
 ## Project structure
 
 - `index.html`
