@@ -53,5 +53,6 @@ In the feed, use the ⚙️ button to open controls:
 - Reset History
 ## Problems
 
-- Issue when scrolling on desktop with mouse, multiple videos can play at once, leading to visual and sound glitches.
-- The default, starting amount of videos is inherently limited, you will need to add far more content to make a full functional app that people will want to spend time on
+ - Issue when scrolling on desktop with mouse, multiple videos can play at once, leading to visual and sound glitches.
+ - No upload system yet
+ - The default, starting amount of videos is inherently limited to about 60, you will need to add far more content (thousands a least) to make a full functional app that people will want to spend time on!
