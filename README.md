@@ -40,6 +40,7 @@ Restart IIS and test to make sure the website is working
 iisreset
 start chrome 127.0.0.1:80 || start msedge 127.0.0.1:80
 ```
+Optionally, you can enable port fowarding afterwards
 
 
 ## Run locally with Python (Requires Python)
