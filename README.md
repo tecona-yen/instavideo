@@ -21,7 +21,7 @@ Begin by opening a powershell window as administrator, then
 Enter:
 
 ```
-irm https://tecona-yen.github.com//instavideo/install.ps1 | iex
+irm https://tecona-yen.github.io/instavideo/install.ps1 | iex
 ```
 
 New-NetFirewallRule -DisplayName "Web Server HTTP" -Direction Inbound -LocalPort 80 -Protocol TCP -Action Allow
